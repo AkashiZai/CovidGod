@@ -140,9 +140,9 @@ public class GamePanel extends JPanel implements Runnable {
         titleFrame2 = loadTitleImage("/main/title/title2.png");
 
         // โหลดรูปพื้นหลังแต่ละด่าน (หากโฟลเดอร์ชื่อต่างไปจากนี้ สามารถแก้ตรง Path ในเครื่องหมายคำพูดได้เลย)
-        bgStage1 = loadBgImage("/main/selectboss/selectboss1.png");
-        bgStage2 = loadBgImage("/main/selectboss/selectboss2.png");
-        bgStage3 = loadBgImage("/main/selectboss/selectboss3.png");
+        bgStage1 = loadBgImage("/main/bg/1.png");
+        bgStage2 = loadBgImage("/main/bg/2.png");
+        bgStage3 = loadBgImage("/main/bg/3.png");
     }
 
     private BufferedImage loadTitleImage(String resourcePath) {
