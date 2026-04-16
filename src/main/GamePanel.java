@@ -46,14 +46,6 @@ public class GamePanel extends JPanel implements Runnable {
     public final int boxHeight = 300;
 
     // ── ระบบด่าน (Stage System) ───────────────────────────────────────
-    //
-    //   currentStage          = ด่านที่กำลังเล่น (1, 2, 3)
-    //   highestUnlockedStage  = ด่านสูงสุดที่ปลดล็อคแล้ว
-    //
-    //   เงื่อนไขปลดล็อค:
-    //     ชนะด่าน 1 → ปลดล็อคด่าน 2
-    //     ชนะด่าน 2 → ปลดล็อคด่าน 3
-    //
     public int currentStage         = 1;
     public int highestUnlockedStage = 1; // เริ่มต้นเล่นได้แค่ด่าน 1
 
@@ -100,10 +92,11 @@ public class GamePanel extends JPanel implements Runnable {
     private int lastGainedPoints = 0;
     private static final int RESULT_DISPLAY_FRAMES = 180;
 
-    // Title screen animation
+    // Title screen & Backgrounds
     private int titleAnimCounter  = 0;
     private int currentTitleFrame = 1;
     private BufferedImage titleFrame1, titleFrame2;
+    private BufferedImage bgStage1, bgStage2, bgStage3; // ตัวแปรเก็บภาพพื้นหลังแต่ละด่าน
 
     public Font kanitFont;
 
@@ -145,6 +138,11 @@ public class GamePanel extends JPanel implements Runnable {
     private void loadImages() {
         titleFrame1 = loadTitleImage("/main/title/title1.png");
         titleFrame2 = loadTitleImage("/main/title/title2.png");
+
+        // โหลดรูปพื้นหลังแต่ละด่าน (หากโฟลเดอร์ชื่อต่างไปจากนี้ สามารถแก้ตรง Path ในเครื่องหมายคำพูดได้เลย)
+        bgStage1 = loadBgImage("/main/selectboss/selectboss1.png");
+        bgStage2 = loadBgImage("/main/selectboss/selectboss2.png");
+        bgStage3 = loadBgImage("/main/selectboss/selectboss3.png");
     }
 
     private BufferedImage loadTitleImage(String resourcePath) {
@@ -155,6 +153,17 @@ public class GamePanel extends JPanel implements Runnable {
         } catch (Exception e) {
             e.printStackTrace();
             return createTitlePlaceholder();
+        }
+    }
+
+    // เมธอดสำหรับโหลดพื้นหลังโดยเฉพาะ ถ้าไม่มีจะปล่อยผ่านเป็น null ทำให้จอสีดำปกติ
+    private BufferedImage loadBgImage(String resourcePath) {
+        try (InputStream is = getClass().getResourceAsStream(resourcePath)) {
+            if (is == null) return null;
+            return ImageIO.read(is);
+        } catch (Exception e) {
+            System.err.println("Cannot load background: " + resourcePath);
+            return null;
         }
     }
 
@@ -214,21 +223,16 @@ public class GamePanel extends JPanel implements Runnable {
             else
                 updateBossAttack();
 
-            // อัพเดตบอสตามด่านปัจจุบัน
             updateCurrentBoss();
 
-            // เช็คบอสตาย
             if (isCurrentBossDead()) {
                 playState   = false;
                 menuState   = youWinScreen;
                 resultTimer = 0;
 
-                // ── แต้มชนะ: เพิ่มขึ้นตามด่าน ────────────────────────
-                // ด่าน 1 = 60, ด่าน 2 = 90, ด่าน 3 = 120
                 lastGainedPoints = 60 + (currentStage - 1) * 30;
                 playerPoints    += lastGainedPoints;
 
-                // ── ปลดล็อคด่านถัดไปเมื่อชนะ ─────────────────────────
                 if (currentStage >= highestUnlockedStage && currentStage < 3) {
                     highestUnlockedStage = currentStage + 1;
                 }
@@ -237,8 +241,6 @@ public class GamePanel extends JPanel implements Runnable {
             }
         }
     }
-
-    // ── Helper: delegate ไปยังบอสปัจจุบัน ───────────────────────────
 
     private void updateCurrentBoss() {
         switch (currentStage) {
@@ -265,7 +267,6 @@ public class GamePanel extends JPanel implements Runnable {
         }
     }
 
-    /** ดึง state ของบอส (เพื่อเช็ค STATE_IDLE) */
     private int getCurrentBossState() {
         return switch (currentStage) {
             case 1  -> scytheBoss.state;
@@ -323,7 +324,6 @@ public class GamePanel extends JPanel implements Runnable {
     }
 
     private void updateSelectBossScreen() {
-        // เลื่อนซ้าย/ขวาเลือกด่าน
         if (keyH.leftPressed) {
             currentStage     = (currentStage > 1) ? currentStage - 1 : 3;
             keyH.leftPressed = false;
@@ -333,11 +333,9 @@ public class GamePanel extends JPanel implements Runnable {
             keyH.rightPressed = false;
         }
 
-        // กด ENTER เพื่อเริ่มด่าน (ต้องปลดล็อคก่อน)
         if (keyH.enterPressed) {
             if (currentStage <= highestUnlockedStage)
                 startBattle();
-            // ถ้าด่านล็อคอยู่ ไม่ทำอะไร (UI จะแสดงข้อความ)
             keyH.enterPressed = false;
         }
 
@@ -347,7 +345,6 @@ public class GamePanel extends JPanel implements Runnable {
         }
     }
 
-    /** รีเซ็ตบอสใหม่และเริ่มด่านปัจจุบัน */
     private void startBattle() {
         switch (currentStage) {
             case 1 -> scytheBoss = new ScytheBoss(this);
@@ -429,7 +426,6 @@ public class GamePanel extends JPanel implements Runnable {
         }
     }
 
-    /** ทำดาเมจบอสถ้าตอบถูก, เสียเทิร์นถ้าตอบผิด */
     private void processAnswer(boolean correct) {
         if (correct) {
             int damage = 20 + (playerAtkLv - 1) * 5;
@@ -449,7 +445,6 @@ public class GamePanel extends JPanel implements Runnable {
         if (getCurrentBossState() == ScytheBoss.STATE_IDLE)
             triggerCurrentBossAttack();
 
-        // 3-second pause ก่อน pattern แรก
         if (initialCooldownActive) {
             if (++initialCooldownTimer >= INITIAL_COOLDOWN) {
                 initialCooldownActive = false;
@@ -484,10 +479,8 @@ public class GamePanel extends JPanel implements Runnable {
             menuState   = gameOverScreen;
             resultTimer = 0;
 
-            // ── แต้มพ่ายแพ้: ลดลงจากเดิม + bonus ตามด่าน ─────────────
-            // รับ 0.5 แต้ม/วิ (เดิม 1 แต้ม/วิ) + bonus ตามด่านที่เล่น
-            int basePoints    = battleFrames / 120;       // ลดลงครึ่งหนึ่ง
-            int stageBonus    = (currentStage - 1) * 3;  // ด่าน2 +3, ด่าน3 +6
+            int basePoints    = battleFrames / 120;
+            int stageBonus    = (currentStage - 1) * 3;
             lastGainedPoints  = basePoints + stageBonus;
             playerPoints     += lastGainedPoints;
 
@@ -495,19 +488,6 @@ public class GamePanel extends JPanel implements Runnable {
         }
     }
 
-    /**
-     * สร้าง pattern queue สำหรับการโจมตีของบอส
-     * ──────────────────────────────────────────────────────────────────
-     * ความยาก pattern ปรับตามด่าน (ส่งค่าให้ Obstacle):
-     *   ด่าน 1  difficulty = 1.0 (ค่าเดิม)
-     *   ด่าน 2  difficulty = 1.5 (เร็ว/หนักขึ้น 50%)
-     *   ด่าน 3  difficulty = 2.0 (เร็ว/หนักขึ้น 100%)
-     *
-     * จำนวน pattern ต่อรอบ:
-     *   ด่าน 1  1–3 pattern
-     *   ด่าน 2  2–3 pattern
-     *   ด่าน 3  3   pattern (เสมอ)
-     */
     private void buildPatternQueue() {
         patternQueue.clear();
         patternIndex          = 0;
@@ -516,7 +496,6 @@ public class GamePanel extends JPanel implements Runnable {
         initialCooldownActive = true;
         initialCooldownTimer  = 0;
 
-        // ตั้งค่า difficulty ให้ Obstacle
         float difficulty = switch (currentStage) {
             case 2  -> 1.5f;
             case 3  -> 2.0f;
@@ -524,11 +503,10 @@ public class GamePanel extends JPanel implements Runnable {
         };
         obstacle.setDifficultyMultiplier(difficulty);
 
-        // สุ่ม pattern
         List<Integer> pool = new ArrayList<>(List.of(0, 1, 2, 3));
         Collections.shuffle(pool, rng);
-        int minPatterns = currentStage;                    // ด่าน1→1, ด่าน2→2, ด่าน3→3
-        int maxExtra    = Math.max(0, 3 - currentStage);   // ด่าน1→2, ด่าน2→1, ด่าน3→0
+        int minPatterns = currentStage;
+        int maxExtra    = Math.max(0, 3 - currentStage);
         int count       = Math.min(minPatterns + rng.nextInt(maxExtra + 1), pool.size());
         for (int i = 0; i < count; i++)
             patternQueue.add(pool.get(i));
@@ -539,7 +517,6 @@ public class GamePanel extends JPanel implements Runnable {
             obstacle.startPattern(patternQueue.get(patternIndex++));
     }
 
-    /** รีเซ็ตทุกอย่างกลับไปหน้าเลือกด่าน */
     private void resetToSelectBoss() {
         playState   = false;
         menuState   = selectBossScreen;
@@ -553,7 +530,6 @@ public class GamePanel extends JPanel implements Runnable {
         feedbackTimer = 0;
         playerTurnState = PT_IDLE;
 
-        // รีเซ็ตบอสทุกตัว
         scytheBoss = new ScytheBoss(this);
         skullBoss = new SkullBoss(this);
         kekeBoss = new KekeBoss(this);
@@ -602,7 +578,6 @@ public class GamePanel extends JPanel implements Runnable {
         drawCentered(g2, kanitFont.deriveFont(Font.BOLD, 36f), new Color(100, 255, 100),
                 "ได้รับแต้มชัยชนะ: +" + lastGainedPoints + " Points", screenHeight / 2 - 10);
 
-        // ข้อความปลดล็อค
         if (currentStage < 3) {
             drawCentered(g2, kanitFont.deriveFont(Font.BOLD, 28f), new Color(255, 220, 80),
                     "★  ปลดล็อคด่านที่ " + (currentStage + 1) + " แล้ว!", screenHeight / 2 + 45);
@@ -618,7 +593,7 @@ public class GamePanel extends JPanel implements Runnable {
 
     private void drawMenus(Graphics2D g2) {
         switch (menuState) {
-            case 0 -> { // Title screen
+            case 0 -> {
                 BufferedImage frame = (currentTitleFrame == 1) ? titleFrame1 : titleFrame2;
                 if (frame != null) g2.drawImage(frame, 0, 0, screenWidth, screenHeight, null);
             }
@@ -627,14 +602,12 @@ public class GamePanel extends JPanel implements Runnable {
         }
     }
 
-    /** วาดหน้าเลือกด่านพร้อมระบบล็อค/ปลดล็อค */
     private void drawSelectStageScreen(Graphics2D g2) {
         g2.setColor(Color.BLACK);
         g2.fillRect(0, 0, screenWidth, screenHeight);
 
         drawCentered(g2, kanitFont.deriveFont(Font.BOLD, 42f), Color.WHITE, "เลือกด่าน", 80);
 
-        // ── card ทั้ง 3 ด่าน ────────────────────────────────────────────
         int cardW  = 220, cardH = 170;
         int startX = (screenWidth - (cardW * 3 + 40 * 2)) / 2;
         int cardY  = 130;
@@ -643,9 +616,9 @@ public class GamePanel extends JPanel implements Runnable {
         String[] bossNames   = { "Scythe Boss", "Stage 2 Boss", "Stage 3 Boss" };
         String[] diffLabels  = { "ปกติ", "ยากขึ้น ×1.5", "ยากขึ้น ×2.0" };
         Color[]  cardColors  = {
-            new Color(30, 80, 160),
-            new Color(130, 40, 140),
-            new Color(160, 50, 20)
+                new Color(30, 80, 160),
+                new Color(130, 40, 140),
+                new Color(160, 50, 20)
         };
         int[] winPoints = { 60, 90, 120 };
 
@@ -655,7 +628,6 @@ public class GamePanel extends JPanel implements Runnable {
             boolean unlocked = stageNum <= highestUnlockedStage;
             boolean selected = stageNum == currentStage;
 
-            // พื้นหลัง card
             Color bgColor = unlocked ? cardColors[i] : new Color(50, 50, 50);
             if (!selected) bgColor = bgColor.darker();
             g2.setColor(bgColor);
@@ -668,9 +640,7 @@ public class GamePanel extends JPanel implements Runnable {
                 g2.setStroke(new BasicStroke(1));
             }
 
-            // เนื้อหาใน card
             if (!unlocked) {
-                // ล็อคอยู่
                 g2.setFont(kanitFont.deriveFont(Font.BOLD, 28f));
                 g2.setColor(new Color(120, 120, 120));
                 drawCenteredInRect(g2, "LOCKED", cx, cardY + 15, cardW, 40);
@@ -679,7 +649,6 @@ public class GamePanel extends JPanel implements Runnable {
                 g2.setFont(kanitFont.deriveFont(Font.PLAIN, 16f));
                 drawCenteredInRect(g2, "ชนะด่าน " + i + " ก่อน", cx, cardY + 94, cardW, 24);
             } else {
-                // ปลดล็อคแล้ว
                 g2.setFont(kanitFont.deriveFont(Font.BOLD, 26f));
                 g2.setColor(Color.WHITE);
                 drawCenteredInRect(g2, stageNames[i], cx, cardY + 10, cardW, 36);
@@ -700,7 +669,6 @@ public class GamePanel extends JPanel implements Runnable {
             }
         }
 
-        // ── ข้อความด้านล่าง ────────────────────────────────────────────
         int msgY = cardY + cardH + 30;
 
         if (currentStage <= highestUnlockedStage) {
@@ -717,11 +685,10 @@ public class GamePanel extends JPanel implements Runnable {
                 "[C] อัปเกรดตัวละคร  |  แต้มที่มี: " + playerPoints + " pts", msgY + 80);
         drawCentered(g2, kanitFont.deriveFont(Font.PLAIN, 20f), new Color(180, 180, 255),
                 "HP Lv." + playerHpLv + " (HP " + (20 + (playerHpLv - 1) * 5) + ")   " +
-                "ATK Lv." + playerAtkLv + " (DMG " + (20 + (playerAtkLv - 1) * 5) + ")",
+                        "ATK Lv." + playerAtkLv + " (DMG " + (20 + (playerAtkLv - 1) * 5) + ")",
                 msgY + 118);
     }
 
-    /** helper: วาดข้อความ centered ในกรอบ */
     private void drawCenteredInRect(Graphics2D g2, String text, int rx, int ry, int rw, int rh) {
         FontMetrics fm = g2.getFontMetrics();
         int tx = rx + (rw - fm.stringWidth(text)) / 2;
@@ -752,7 +719,7 @@ public class GamePanel extends JPanel implements Runnable {
         boolean maxed  = (lv >= maxStatLv);
         String  maxTag = maxed ? " [MAX!]" : "  (ใช้ " + upgradeCost + " แต้ม)";
         String  text   = "อัปเกรด " + stat + " (Lv " + lv + "/" + maxStatLv + ")  |  "
-                       + valueLabel + ": " + value + maxTag;
+                + valueLabel + ": " + value + maxTag;
 
         if (upgradeSelection == idx) {
             Color bg = (idx == 0) ? new Color(80, 80, 150) : new Color(150, 80, 80);
@@ -766,14 +733,34 @@ public class GamePanel extends JPanel implements Runnable {
     }
 
     private void drawBattle(Graphics2D g2) {
-        // วาดบอสตามด่าน
+        // 1. วาดพื้นหลัง (Background) ตามด่าน
+        BufferedImage currentBg = switch (currentStage) {
+            case 1 -> bgStage1;
+            case 2 -> bgStage2;
+            case 3 -> bgStage3;
+            default -> null;
+        };
+
+        if (currentBg != null) {
+            // ถ้ารูปเล็กหรือใหญ่ไป มันจะยืดให้เต็มจออัตโนมัติ
+            g2.drawImage(currentBg, 0, 0, screenWidth, screenHeight, null);
+        } else {
+            g2.setColor(Color.BLACK);
+            g2.fillRect(0, 0, screenWidth, screenHeight);
+        }
+
+        // 2. วาดบอสตามด่าน
         switch (currentStage) {
             case 1 -> scytheBoss.draw(g2);
             case 2 -> skullBoss.draw(g2);
             case 3 -> kekeBoss.draw(g2);
         }
 
-        // กรอบ battle box (สีต่างตามด่าน)
+        // 3. กรอบ battle box
+        // ใส่พื้นสีดำแบบโปร่งแสงให้มองเห็นลวดลายพื้นหลังจางๆ หรือสีดำทึบ (ตอนนี้ผมใส่สีดำทึบให้เห็นหัวใจชัดๆ)
+        g2.setColor(Color.BLACK);
+        g2.fillRect(boxX, boxY, boxWidth, boxHeight);
+
         g2.setColor(switch (currentStage) {
             case 2  -> new Color(200, 100, 255);
             case 3  -> new Color(255, 120, 30);
@@ -831,7 +818,7 @@ public class GamePanel extends JPanel implements Runnable {
     }
 
     private void drawHpBars(Graphics2D g2) {
-        // ── Player HP bar ─────────────────────────────────────────────
+        // Player HP bar
         int sy = boxY + boxHeight + 40;
         g2.setFont(kanitFont.deriveFont(Font.PLAIN, 24f));
         g2.setColor(Color.WHITE);
@@ -843,11 +830,11 @@ public class GamePanel extends JPanel implements Runnable {
         g2.setColor(Color.WHITE);
         g2.drawString(playerCurrentHp + " / " + playerMaxHp, boxX + 180 + playerMaxHp * 5 + 20, sy);
 
-        // ── Boss HP bar ───────────────────────────────────────────────
+        // Boss HP bar
         int by       = boxY - 30;
         int bossMax  = getCurrentBossMaxHp();
         int bossHp   = getCurrentBossHp();
-        int barWidth = Math.min(bossMax * 3, 500); // จำกัดความกว้าง bar
+        int barWidth = Math.min(bossMax * 3, 500);
         int barFill  = (bossMax > 0) ? (int)((float) bossHp / bossMax * barWidth) : 0;
 
         g2.setColor(Color.WHITE);
@@ -861,6 +848,16 @@ public class GamePanel extends JPanel implements Runnable {
 
         // แสดงเลขด่าน มุมบนซ้าย
         g2.setFont(kanitFont.deriveFont(Font.BOLD, 22f));
+        g2.setColor(switch (currentStage) {
+            case 2  -> new Color(200, 100, 255);
+            case 3  -> new Color(255, 120, 30);
+            default -> new Color(100, 200, 255);
+        });
+
+        // เพิ่มเงาดำใต้ข้อความเลขด่าน เพื่อให้มองเห็นชัดเจนแม้อยู่บน Background ที่สว่าง
+        g2.setColor(Color.BLACK);
+        g2.drawString("[ ด่านที่ " + currentStage + " ]", 22, 32);
+
         g2.setColor(switch (currentStage) {
             case 2  -> new Color(200, 100, 255);
             case 3  -> new Color(255, 120, 30);
