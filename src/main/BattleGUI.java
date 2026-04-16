@@ -9,14 +9,6 @@ import java.util.List;
 
 /**
  * BattleGUI — Undertale-style quiz panel shown during the player's turn.
- *
- * Usage:
- *   loadQuestions("/path/questions.txt")  — load question bank
- *   nextQuestion()                        — show a random question
- *   handleUp() / handleDown()             — navigate choices (W/S keys)
- *   confirmSelection()                    — submit answer (Enter)
- *   isVisible() / isAnswered() / getResult() — query state
- *   update() / draw(g2)                   — call every frame
  */
 public class BattleGUI {
 
@@ -24,11 +16,15 @@ public class BattleGUI {
 
     public static class Question {
         public final String   text;
-        public final String[] choices;  // always 3
-        public final int      correct;  // 0, 1, or 2
+        public final String[] choices;
+        public final int      correct;
+        public final String   explanation; // เพิ่มฟิลด์สำหรับเก็บคำอธิบาย
 
-        public Question(String text, String[] choices, int correct) {
-            this.text = text; this.choices = choices; this.correct = correct;
+        public Question(String text, String[] choices, int correct, String explanation) {
+            this.text = text;
+            this.choices = choices;
+            this.correct = correct;
+            this.explanation = explanation;
         }
     }
 
@@ -95,12 +91,13 @@ public class BattleGUI {
     private int   resultTimer = 0;
 
     private static final int FADE_IN_FRAMES  = 15;
-    private static final int RESULT_FRAMES   = 50;
+    private static final int RESULT_FRAMES   = 60; // หน่วงเวลาเฉพาะตอนตอบถูก
 
     // Layout
     private final int screenW, screenH;
     private final int panelX, panelY;
-    private static final int PANEL_W = 720, PANEL_H = 340;
+    // เพิ่มความสูงหน้าต่างจาก 340 เป็น 430 เพื่อให้มีพื้นที่บรรทัดสำหรับแสดงคำอธิบายเพิ่มเติม
+    private static final int PANEL_W = 720, PANEL_H = 430;
 
     public BattleGUI(int screenW, int screenH) {
         this.screenW = screenW;
@@ -111,11 +108,6 @@ public class BattleGUI {
 
     // ── Public API ────────────────────────────────────────────────────
 
-    /**
-     * Parses a question bank from a plain-text resource file.
-     * Format per question:  Q: ... / A: ... / B: ... / C: ... / ANS: A|B|C
-     * Questions are separated by blank lines or underscores (_).
-     */
     public void loadQuestions(String resourcePath) {
         questions.clear();
         try (BufferedReader br = new BufferedReader(
@@ -124,13 +116,14 @@ public class BattleGUI {
             String   qText    = null;
             String[] choices  = new String[3];
             int      ci       = 0, ansIdx = 0;
+            String   expText  = ""; // ตัวแปรเก็บคำอธิบาย
 
             for (String line; (line = br.readLine()) != null; ) {
                 line = line.trim();
 
                 if (line.equals("_") || line.isEmpty()) {
-                    if (qText != null && ci == 3) questions.add(new Question(qText, choices.clone(), ansIdx));
-                    qText = null; choices = new String[3]; ci = ansIdx = 0;
+                    if (qText != null && ci == 3) questions.add(new Question(qText, choices.clone(), ansIdx, expText));
+                    qText = null; choices = new String[3]; ci = ansIdx = 0; expText = "";
                     continue;
                 }
 
@@ -142,9 +135,11 @@ public class BattleGUI {
                     String ans = line.substring(4).trim().toUpperCase();
                     ansIdx = ans.equals("A") ? 0 : ans.equals("B") ? 1 : 2;
                 }
+                else if (line.startsWith("EXP:")) { // ดึงข้อมูลบรรทัดที่ขึ้นต้นด้วย EXP:
+                    expText = line.substring(4).trim();
+                }
             }
-            // Last question (no trailing separator)
-            if (qText != null && ci == 3) questions.add(new Question(qText, choices.clone(), ansIdx));
+            if (qText != null && ci == 3) questions.add(new Question(qText, choices.clone(), ansIdx, expText));
 
             System.out.println("[BattleGUI] Loaded " + questions.size() + " questions.");
         } catch (Exception e) {
@@ -152,7 +147,6 @@ public class BattleGUI {
         }
     }
 
-    /** Shows a random question. If there are none, auto-marks as answered correctly. */
     public void nextQuestion() {
         if (questions.isEmpty()) { answered = correct = true; return; }
         current     = questions.get(rng.nextInt(questions.size()));
@@ -161,18 +155,23 @@ public class BattleGUI {
         fadeTimer = resultTimer = 0; fadeAlpha = 0f;
     }
 
-    public void handleUp()   { if (canInput()) selectedIdx = (selectedIdx + 2) % 3; }
-    public void handleDown() { if (canInput()) selectedIdx = (selectedIdx + 1) % 3; }
+    public void handleUp()   { if (visible && !answered) selectedIdx = (selectedIdx + 2) % 3; }
+    public void handleDown() { if (visible && !answered) selectedIdx = (selectedIdx + 1) % 3; }
 
     public void confirmSelection() {
-        if (!canInput() || current == null) return;
-        answered    = true;
-        correct     = (selectedIdx == current.correct);
-        showResult  = true;
-        resultTimer = 0;
-    }
+        if (!visible || current == null) return;
 
-    private boolean canInput() { return visible && !answered && !showResult; }
+        if (showResult) {
+            // ถ้าระบบกำลังแสดงผลลัพธ์อยู่ การกด Enter จะเป็นการปิดหน้าต่างเพื่อเข้าสู้บอส
+            visible = false;
+        } else if (!answered) {
+            // ถ้ายังไม่ตอบ ทำการส่งคำตอบ
+            answered    = true;
+            correct     = (selectedIdx == current.correct);
+            showResult  = true;
+            resultTimer = 0;
+        }
+    }
 
     public boolean isVisible()    { return visible;  }
     public boolean isAnswered()   { return answered; }
@@ -184,7 +183,12 @@ public class BattleGUI {
     public void update() {
         if (!visible) return;
         if (fadeAlpha < 1f) fadeAlpha = Math.min(1f, (float) ++fadeTimer / FADE_IN_FRAMES);
-        if (showResult && ++resultTimer >= RESULT_FRAMES) visible = false;
+
+        // หากตอบถูก ให้ปิดหน้าต่างอัตโนมัติเมื่อครบเวลา
+        // แต่ถ้าตอบผิด หน้าต่างจะไม่ปิดเอง ผู้เล่นต้องกด Enter เพื่อยืนยันว่าอ่านคำอธิบายจบแล้ว
+        if (showResult && correct) {
+            if (++resultTimer >= RESULT_FRAMES) visible = false;
+        }
     }
 
     // ── Draw ──────────────────────────────────────────────────────────
@@ -237,12 +241,30 @@ public class BattleGUI {
 
         // Result or hint text at bottom
         if (showResult) {
-            String txt = correct ? "✓ CORRECT!" : "✗ WRONG!";
+            String txt = correct ? "✓ CORRECT!" : "WRONG!";
             Color  col = correct ? new Color(100, 255, 100) : new Color(255, 80, 80);
-            drawCentered(g2, FONT_RESULT, col, txt, panelY + PANEL_H - 14);
+
+            // หากตอบผิด และมีคำอธิบาย (EXP) ในไฟล์
+            if (!correct && current.explanation != null && !current.explanation.isEmpty()) {
+                // ขยับคำว่า WRONG ขึ้นมานิดนึง
+                drawCentered(g2, FONT_RESULT, col, txt, panelY + 310);
+
+                // วาดคำอธิบาย
+                g2.setFont(FONT_LABEL);
+                g2.setColor(new Color(255, 210, 100)); // สีเหลืองทอง
+                drawWrappedText(g2, "ความรู้เพิ่มเติม: " + current.explanation, panelX + 30, panelY + 340, PANEL_W - 60, 22);
+
+                drawCentered(g2, FONT_LABEL, new Color(120, 100, 180), "[ ENTER เพื่อรับการโจมตี ]", panelY + PANEL_H - 18);
+            } else {
+                // กรณีตอบถูก หรือในไฟล์ไม่ได้เขียนคำอธิบายไว้
+                drawCentered(g2, FONT_RESULT, col, txt, panelY + 330);
+                if (!correct) {
+                    drawCentered(g2, FONT_LABEL, new Color(120, 100, 180), "[ ENTER เพื่อรับการโจมตี ]", panelY + PANEL_H - 18);
+                }
+            }
         } else {
             drawCentered(g2, FONT_LABEL, new Color(120, 100, 180),
-                         "[ W / S เลื่อน ]   [ ENTER ยืนยัน ]", panelY + PANEL_H - 14);
+                    "[ W / S เลื่อน ]   [ ENTER ยืนยัน ]", panelY + PANEL_H - 18);
         }
 
         g2.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 1f));
@@ -295,7 +317,6 @@ public class BattleGUI {
         g2.drawString(text, panelX + (PANEL_W - w) / 2, y);
     }
 
-    /** Word-wraps long text within maxWidth, advancing y by lineHeight per line. */
     private void drawWrappedText(Graphics2D g2, String text, int x, int y, int maxWidth, int lineHeight) {
         FontMetrics fm  = g2.getFontMetrics();
         StringBuilder line = new StringBuilder();
