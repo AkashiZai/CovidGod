@@ -1,1 +1,1 @@
-# CovidGod
+# CovidGaming

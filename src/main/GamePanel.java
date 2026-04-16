@@ -1,0 +1,877 @@
+package main;
+
+import java.awt.*;
+import java.awt.image.BufferedImage;
+import java.io.InputStream;
+import java.util.*;
+import java.util.List;
+import javax.imageio.ImageIO;
+import javax.swing.JPanel;
+import main.entity.Player;
+import main.entity.ScytheBoss;
+import main.entity.SkullBoss;
+import main.entity.KekeBoss;
+import main.object.Obstacle;
+
+public class GamePanel extends JPanel implements Runnable {
+
+    // ── Screen & tile settings ────────────────────────────────────────
+    public final int tileSize     = 64;
+    public final int screenWidth  = 1024;
+    public final int screenHeight = 768;
+    private final int FPS         = 60;
+
+    // ── Game objects ──────────────────────────────────────────────────
+    public final Key keyH = new Key();
+    public Player     player;
+    public ScytheBoss scytheBoss;   // บอสด่าน 1
+    public SkullBoss skullBoss;   // บอสด่าน 2
+    public KekeBoss kekeBoss;   // บอสด่าน 3
+    public Obstacle   obstacle;
+    private BattleGUI battleGUI;
+    private Thread    gameThread;
+
+    // ── Menu / screen states ──────────────────────────────────────────
+    public static boolean playState = false;
+    public int menuState = 0;
+    public final int titleScreen      = 0;
+    public final int selectBossScreen = 1;
+    public final int gameOverScreen   = 2;
+    public final int youWinScreen     = 3;
+    public final int upgradeScreen    = 4;
+
+    // ── Battle box (area player moves in) ─────────────────────────────
+    public int boxX, boxY;
+    public final int boxWidth  = 700;
+    public final int boxHeight = 300;
+
+    // ── ระบบด่าน (Stage System) ───────────────────────────────────────
+    //
+    //   currentStage          = ด่านที่กำลังเล่น (1, 2, 3)
+    //   highestUnlockedStage  = ด่านสูงสุดที่ปลดล็อคแล้ว
+    //
+    //   เงื่อนไขปลดล็อค:
+    //     ชนะด่าน 1 → ปลดล็อคด่าน 2
+    //     ชนะด่าน 2 → ปลดล็อคด่าน 3
+    //
+    public int currentStage         = 1;
+    public int highestUnlockedStage = 1; // เริ่มต้นเล่นได้แค่ด่าน 1
+
+    // ── Stats & progression ───────────────────────────────────────────
+    int playerMaxHp     = 20;
+    int playerCurrentHp = 20;
+    public int playerPoints  = 0;
+    public int playerAtkLv   = 1;
+    public int playerHpLv    = 1;
+    public final int maxStatLv   = 20;  // อัพได้สูงสุด 20 เลเวล
+    public final int upgradeCost = 30;
+    private int upgradeSelection = 0;   // 0 = HP, 1 = ATK
+
+    // ── Turn phases ───────────────────────────────────────────────────
+    public int battlePhase = 0;
+    public final int playerTurnPhase = 0;
+    public final int bossAttackPhase = 1;
+
+    // Player turn sub-states
+    private static final int PT_IDLE             = 0;
+    private static final int PT_SHOWING_QUESTION = 1;
+    private static final int PT_ANSWERED         = 2;
+    private int playerTurnState = PT_IDLE;
+
+    private String  feedbackText     = "";
+    private int     feedbackTimer    = 0;
+    private boolean pendingBossPhase = false;
+    private static final int FEEDBACK_FRAMES = 70;
+
+    // ── Pattern queue (boss attack patterns) ─────────────────────────
+    private final Random        rng          = new Random();
+    private final List<Integer> patternQueue = new ArrayList<>();
+    private int  patternIndex         = 0;
+    private int  cooldownTimer        = 0;
+    private boolean inCooldown        = false;
+    private boolean initialCooldownActive = false;
+    private int  initialCooldownTimer = 0;
+    private static final int PATTERN_COOLDOWN = 60;
+    private static final int INITIAL_COOLDOWN = 180; // 3 seconds
+
+    // ── Misc ──────────────────────────────────────────────────────────
+    private int resultTimer      = 0;
+    private int battleFrames     = 0;
+    private int lastGainedPoints = 0;
+    private static final int RESULT_DISPLAY_FRAMES = 180;
+
+    // Title screen animation
+    private int titleAnimCounter  = 0;
+    private int currentTitleFrame = 1;
+    private BufferedImage titleFrame1, titleFrame2;
+
+    public Font kanitFont;
+
+    // ── Constructor ───────────────────────────────────────────────────
+
+    public GamePanel() {
+        player     = new Player(this, keyH);
+        scytheBoss = new ScytheBoss(this);
+        skullBoss = new SkullBoss(this);
+        kekeBoss = new KekeBoss(this);
+        obstacle   = new Obstacle(this);
+        battleGUI  = new BattleGUI(screenWidth, screenHeight);
+        battleGUI.loadQuestions("/main/res/questions.txt");
+
+        boxX = (screenWidth - boxWidth) / 2;
+        boxY = 280;
+
+        setPreferredSize(new Dimension(screenWidth, screenHeight));
+        setBackground(Color.BLACK);
+        setDoubleBuffered(true);
+        addKeyListener(keyH);
+        setFocusable(true);
+
+        loadImages();
+        loadThaiFont();
+    }
+
+    private void loadThaiFont() {
+        try {
+            InputStream is = getClass().getResourceAsStream("/main/res/Kanit-Bold.ttf");
+            kanitFont = (is != null)
+                    ? Font.createFont(Font.TRUETYPE_FONT, is)
+                    : new Font("Tahoma", Font.BOLD, 24);
+        } catch (Exception e) {
+            kanitFont = new Font("Tahoma", Font.BOLD, 24);
+        }
+    }
+
+    private void loadImages() {
+        titleFrame1 = loadTitleImage("/main/title/title1.png");
+        titleFrame2 = loadTitleImage("/main/title/title2.png");
+    }
+
+    private BufferedImage loadTitleImage(String resourcePath) {
+        try (InputStream is = getClass().getResourceAsStream(resourcePath)) {
+            if (is == null) return createTitlePlaceholder();
+            BufferedImage image = ImageIO.read(is);
+            return (image != null) ? image : createTitlePlaceholder();
+        } catch (Exception e) {
+            e.printStackTrace();
+            return createTitlePlaceholder();
+        }
+    }
+
+    private BufferedImage createTitlePlaceholder() {
+        BufferedImage placeholder = new BufferedImage(screenWidth, screenHeight, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g = placeholder.createGraphics();
+        g.setColor(Color.BLACK);
+        g.fillRect(0, 0, screenWidth, screenHeight);
+        g.setColor(Color.WHITE);
+        g.setFont(new Font("Arial", Font.BOLD, 48));
+        g.drawString("COVIDTALE", 80, 120);
+        g.setFont(new Font("Arial", Font.PLAIN, 24));
+        g.drawString("Missing title assets", 80, 170);
+        g.dispose();
+        return placeholder;
+    }
+
+    public void startGameThread() {
+        gameThread = new Thread(this);
+        gameThread.start();
+    }
+
+    // ── Game loop (fixed 60 FPS) ──────────────────────────────────────
+    @Override
+    public void run() {
+        double interval = 1_000_000_000.0 / FPS;
+        double delta    = 0;
+        long   last     = System.nanoTime();
+
+        while (gameThread != null) {
+            long now = System.nanoTime();
+            delta += (now - last) / interval;
+            last   = now;
+            if (delta >= 1.0) {
+                update();
+                repaint();
+                delta--;
+            }
+        }
+    }
+
+    // ── UPDATE ────────────────────────────────────────────────────────
+
+    public void update() {
+        if (menuState == gameOverScreen || menuState == youWinScreen) {
+            if (++resultTimer >= RESULT_DISPLAY_FRAMES)
+                resetToSelectBoss();
+            return;
+        }
+
+        if (!playState) {
+            updateMenus();
+        } else {
+            battleFrames++;
+            if (battlePhase == playerTurnPhase)
+                updatePlayerTurn();
+            else
+                updateBossAttack();
+
+            // อัพเดตบอสตามด่านปัจจุบัน
+            updateCurrentBoss();
+
+            // เช็คบอสตาย
+            if (isCurrentBossDead()) {
+                playState   = false;
+                menuState   = youWinScreen;
+                resultTimer = 0;
+
+                // ── แต้มชนะ: เพิ่มขึ้นตามด่าน ────────────────────────
+                // ด่าน 1 = 60, ด่าน 2 = 90, ด่าน 3 = 120
+                lastGainedPoints = 60 + (currentStage - 1) * 30;
+                playerPoints    += lastGainedPoints;
+
+                // ── ปลดล็อคด่านถัดไปเมื่อชนะ ─────────────────────────
+                if (currentStage >= highestUnlockedStage && currentStage < 3) {
+                    highestUnlockedStage = currentStage + 1;
+                }
+
+                obstacle.stop();
+            }
+        }
+    }
+
+    // ── Helper: delegate ไปยังบอสปัจจุบัน ───────────────────────────
+
+    private void updateCurrentBoss() {
+        switch (currentStage) {
+            case 1 -> scytheBoss.update();
+            case 2 -> skullBoss.update();
+            case 3 -> kekeBoss.update();
+        }
+    }
+
+    private boolean isCurrentBossDead() {
+        return switch (currentStage) {
+            case 1  -> scytheBoss.isDead;
+            case 2  -> skullBoss.isDead;
+            case 3  -> kekeBoss.isDead;
+            default -> false;
+        };
+    }
+
+    private void triggerCurrentBossAttack() {
+        switch (currentStage) {
+            case 1 -> scytheBoss.triggerAttack();
+            case 2 -> skullBoss.triggerAttack();
+            case 3 -> kekeBoss.triggerAttack();
+        }
+    }
+
+    /** ดึง state ของบอส (เพื่อเช็ค STATE_IDLE) */
+    private int getCurrentBossState() {
+        return switch (currentStage) {
+            case 1  -> scytheBoss.state;
+            case 2  -> skullBoss.state;
+            case 3  -> kekeBoss.state;
+            default -> ScytheBoss.STATE_IDLE;
+        };
+    }
+
+    public int getCurrentBossMaxHp() {
+        return switch (currentStage) {
+            case 1  -> scytheBoss.maxHp;
+            case 2  -> skullBoss.maxHp;
+            case 3  -> kekeBoss.maxHp;
+            default -> 100;
+        };
+    }
+
+    public int getCurrentBossHp() {
+        return switch (currentStage) {
+            case 1  -> scytheBoss.hp;
+            case 2  -> skullBoss.hp;
+            case 3  -> kekeBoss.hp;
+            default -> 0;
+        };
+    }
+
+    private void damageCurrentBoss(int damage) {
+        switch (currentStage) {
+            case 1 -> scytheBoss.hp = Math.max(0, scytheBoss.hp - damage);
+            case 2 -> skullBoss.hp = Math.max(0, skullBoss.hp - damage);
+            case 3 -> kekeBoss.hp = Math.max(0, kekeBoss.hp - damage);
+        }
+    }
+
+    // ── Menu navigation ───────────────────────────────────────────────
+
+    private void updateMenus() {
+        switch (menuState) {
+            case 0 -> updateTitleScreen();
+            case 1 -> updateSelectBossScreen();
+            case 4 -> updateUpgradeScreen();
+        }
+    }
+
+    private void updateTitleScreen() {
+        if (keyH.anyKeyPressed) {
+            menuState          = selectBossScreen;
+            keyH.anyKeyPressed = keyH.enterPressed = false;
+        }
+        if (++titleAnimCounter > 30) {
+            currentTitleFrame = (currentTitleFrame == 1) ? 2 : 1;
+            titleAnimCounter  = 0;
+        }
+    }
+
+    private void updateSelectBossScreen() {
+        // เลื่อนซ้าย/ขวาเลือกด่าน
+        if (keyH.leftPressed) {
+            currentStage     = (currentStage > 1) ? currentStage - 1 : 3;
+            keyH.leftPressed = false;
+        }
+        if (keyH.rightPressed) {
+            currentStage      = (currentStage < 3) ? currentStage + 1 : 1;
+            keyH.rightPressed = false;
+        }
+
+        // กด ENTER เพื่อเริ่มด่าน (ต้องปลดล็อคก่อน)
+        if (keyH.enterPressed) {
+            if (currentStage <= highestUnlockedStage)
+                startBattle();
+            // ถ้าด่านล็อคอยู่ ไม่ทำอะไร (UI จะแสดงข้อความ)
+            keyH.enterPressed = false;
+        }
+
+        if (keyH.cPressed) {
+            menuState    = upgradeScreen;
+            keyH.cPressed = false;
+        }
+    }
+
+    /** รีเซ็ตบอสใหม่และเริ่มด่านปัจจุบัน */
+    private void startBattle() {
+        switch (currentStage) {
+            case 1 -> scytheBoss = new ScytheBoss(this);
+            case 2 -> skullBoss = new SkullBoss(this);
+            case 3 -> kekeBoss = new KekeBoss(this);
+        }
+
+        playState       = true;
+        battlePhase     = playerTurnPhase;
+        playerTurnState = PT_IDLE;
+        playerMaxHp     = 20 + (playerHpLv - 1) * 5;
+        playerCurrentHp = playerMaxHp;
+        battleFrames    = 0;
+        player.x        = boxX + boxWidth  / 2 - 32;
+        player.y        = boxY + boxHeight / 2 - 32;
+    }
+
+    private void updateUpgradeScreen() {
+        if (keyH.upPressed) {
+            upgradeSelection = (upgradeSelection + 1) % 2;
+            keyH.upPressed   = false;
+        }
+        if (keyH.downPressed) {
+            upgradeSelection = (upgradeSelection + 1) % 2;
+            keyH.downPressed = false;
+        }
+
+        if (keyH.enterPressed) {
+            if (playerPoints >= upgradeCost) {
+                if (upgradeSelection == 0 && playerHpLv < maxStatLv) {
+                    playerHpLv++;
+                    playerPoints -= upgradeCost;
+                }
+                if (upgradeSelection == 1 && playerAtkLv < maxStatLv) {
+                    playerAtkLv++;
+                    playerPoints -= upgradeCost;
+                }
+            }
+            keyH.enterPressed = false;
+        }
+        if (keyH.cPressed) {
+            menuState    = selectBossScreen;
+            keyH.cPressed = false;
+        }
+    }
+
+    // ── Player turn ───────────────────────────────────────────────────
+
+    private void updatePlayerTurn() {
+        if (feedbackTimer > 0) feedbackTimer--;
+        battleGUI.update();
+
+        switch (playerTurnState) {
+            case PT_IDLE -> {
+                if (pendingBossPhase && feedbackTimer <= 0) {
+                    pendingBossPhase = false;
+                    battlePhase      = bossAttackPhase;
+                    buildPatternQueue();
+                    return;
+                }
+                if (keyH.enterPressed && !isCurrentBossDead()) {
+                    keyH.enterPressed = false;
+                    battleGUI.nextQuestion();
+                    playerTurnState   = PT_SHOWING_QUESTION;
+                }
+            }
+            case PT_SHOWING_QUESTION -> {
+                if (keyH.upPressed)    { battleGUI.handleUp();         keyH.upPressed    = false; }
+                if (keyH.downPressed)  { battleGUI.handleDown();       keyH.downPressed  = false; }
+                if (keyH.enterPressed) { battleGUI.confirmSelection(); keyH.enterPressed = false; }
+                if (!battleGUI.isVisible() && battleGUI.isAnswered()) {
+                    playerTurnState = PT_ANSWERED;
+                    processAnswer(battleGUI.getResult());
+                }
+            }
+            case PT_ANSWERED -> {
+                if (feedbackTimer <= 0) playerTurnState = PT_IDLE;
+            }
+        }
+    }
+
+    /** ทำดาเมจบอสถ้าตอบถูก, เสียเทิร์นถ้าตอบผิด */
+    private void processAnswer(boolean correct) {
+        if (correct) {
+            int damage = 20 + (playerAtkLv - 1) * 5;
+            damageCurrentBoss(damage);
+            feedbackText = "* โจมตี " + damage + " ดาเมจ!";
+        } else {
+            feedbackText = "* ตอบผิด! เสียโอกาสโจมตี!";
+        }
+        feedbackTimer    = FEEDBACK_FRAMES;
+        pendingBossPhase = true;
+        playerTurnState  = PT_ANSWERED;
+    }
+
+    // ── Boss attack turn ──────────────────────────────────────────────
+
+    private void updateBossAttack() {
+        if (getCurrentBossState() == ScytheBoss.STATE_IDLE)
+            triggerCurrentBossAttack();
+
+        // 3-second pause ก่อน pattern แรก
+        if (initialCooldownActive) {
+            if (++initialCooldownTimer >= INITIAL_COOLDOWN) {
+                initialCooldownActive = false;
+                startNextInQueue();
+            }
+            player.update();
+            return;
+        }
+
+        if (!inCooldown) {
+            if (!obstacle.isActive()) {
+                if (patternIndex < patternQueue.size()) {
+                    inCooldown    = true;
+                    cooldownTimer = 0;
+                } else {
+                    battlePhase = playerTurnPhase;
+                }
+            }
+        } else if (++cooldownTimer >= PATTERN_COOLDOWN) {
+            inCooldown = false;
+            startNextInQueue();
+        }
+
+        obstacle.update();
+        player.update();
+
+        if (obstacle.checkHit(player.x, player.y, 64))
+            playerCurrentHp = Math.max(0, playerCurrentHp - 1);
+
+        if (playerCurrentHp <= 0) {
+            playState   = false;
+            menuState   = gameOverScreen;
+            resultTimer = 0;
+
+            // ── แต้มพ่ายแพ้: ลดลงจากเดิม + bonus ตามด่าน ─────────────
+            // รับ 0.5 แต้ม/วิ (เดิม 1 แต้ม/วิ) + bonus ตามด่านที่เล่น
+            int basePoints    = battleFrames / 120;       // ลดลงครึ่งหนึ่ง
+            int stageBonus    = (currentStage - 1) * 3;  // ด่าน2 +3, ด่าน3 +6
+            lastGainedPoints  = basePoints + stageBonus;
+            playerPoints     += lastGainedPoints;
+
+            obstacle.stop();
+        }
+    }
+
+    /**
+     * สร้าง pattern queue สำหรับการโจมตีของบอส
+     * ──────────────────────────────────────────────────────────────────
+     * ความยาก pattern ปรับตามด่าน (ส่งค่าให้ Obstacle):
+     *   ด่าน 1  difficulty = 1.0 (ค่าเดิม)
+     *   ด่าน 2  difficulty = 1.5 (เร็ว/หนักขึ้น 50%)
+     *   ด่าน 3  difficulty = 2.0 (เร็ว/หนักขึ้น 100%)
+     *
+     * จำนวน pattern ต่อรอบ:
+     *   ด่าน 1  1–3 pattern
+     *   ด่าน 2  2–3 pattern
+     *   ด่าน 3  3   pattern (เสมอ)
+     */
+    private void buildPatternQueue() {
+        patternQueue.clear();
+        patternIndex          = 0;
+        inCooldown            = false;
+        cooldownTimer         = 0;
+        initialCooldownActive = true;
+        initialCooldownTimer  = 0;
+
+        // ตั้งค่า difficulty ให้ Obstacle
+        float difficulty = switch (currentStage) {
+            case 2  -> 1.5f;
+            case 3  -> 2.0f;
+            default -> 1.0f;
+        };
+        obstacle.setDifficultyMultiplier(difficulty);
+
+        // สุ่ม pattern
+        List<Integer> pool = new ArrayList<>(List.of(0, 1, 2, 3));
+        Collections.shuffle(pool, rng);
+        int minPatterns = currentStage;                    // ด่าน1→1, ด่าน2→2, ด่าน3→3
+        int maxExtra    = Math.max(0, 3 - currentStage);   // ด่าน1→2, ด่าน2→1, ด่าน3→0
+        int count       = Math.min(minPatterns + rng.nextInt(maxExtra + 1), pool.size());
+        for (int i = 0; i < count; i++)
+            patternQueue.add(pool.get(i));
+    }
+
+    private void startNextInQueue() {
+        if (patternIndex < patternQueue.size())
+            obstacle.startPattern(patternQueue.get(patternIndex++));
+    }
+
+    /** รีเซ็ตทุกอย่างกลับไปหน้าเลือกด่าน */
+    private void resetToSelectBoss() {
+        playState   = false;
+        menuState   = selectBossScreen;
+        battlePhase = playerTurnPhase;
+        resultTimer = 0;
+        obstacle.stop();
+        patternQueue.clear();
+        patternIndex = cooldownTimer = initialCooldownTimer = 0;
+        inCooldown   = initialCooldownActive = pendingBossPhase = false;
+        feedbackText  = "";
+        feedbackTimer = 0;
+        playerTurnState = PT_IDLE;
+
+        // รีเซ็ตบอสทุกตัว
+        scytheBoss = new ScytheBoss(this);
+        skullBoss = new SkullBoss(this);
+        kekeBoss = new KekeBoss(this);
+
+        obstacle.setDifficultyMultiplier(1.0f);
+        player.x = boxX + boxWidth  / 2 - 32;
+        player.y = boxY + boxHeight / 2 - 32;
+    }
+
+    // ── PAINT ─────────────────────────────────────────────────────────
+
+    @Override
+    public void paintComponent(Graphics g) {
+        super.paintComponent(g);
+        Graphics2D g2 = (Graphics2D) g;
+        g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+        if      (menuState == gameOverScreen) drawGameOver(g2);
+        else if (menuState == youWinScreen)   drawYouWin(g2);
+        else if (!playState)                  drawMenus(g2);
+        else                                  drawBattle(g2);
+
+        g2.dispose();
+    }
+
+    private void drawGameOver(Graphics2D g2) {
+        g2.setColor(Color.BLACK);
+        g2.fillRect(0, 0, screenWidth, screenHeight);
+
+        drawCentered(g2, kanitFont.deriveFont(Font.BOLD, 80f), Color.RED,
+                "GAME OVER", screenHeight / 2 - 60);
+        drawCentered(g2, kanitFont.deriveFont(Font.BOLD, 36f), Color.YELLOW,
+                "ได้รับแต้มความพยายาม: +" + lastGainedPoints + " Points", screenHeight / 2 + 10);
+
+        String dots = ".".repeat((resultTimer / 20) % 4);
+        drawCentered(g2, kanitFont.deriveFont(Font.PLAIN, 28f), Color.WHITE,
+                "กำลังกลับไปหน้าเลือกด่าน" + dots, screenHeight / 2 + 80);
+    }
+
+    private void drawYouWin(Graphics2D g2) {
+        g2.setColor(Color.BLACK);
+        g2.fillRect(0, 0, screenWidth, screenHeight);
+
+        drawCentered(g2, kanitFont.deriveFont(Font.BOLD, 80f), Color.YELLOW,
+                "YOU WIN!", screenHeight / 2 - 70);
+        drawCentered(g2, kanitFont.deriveFont(Font.BOLD, 36f), new Color(100, 255, 100),
+                "ได้รับแต้มชัยชนะ: +" + lastGainedPoints + " Points", screenHeight / 2 - 10);
+
+        // ข้อความปลดล็อค
+        if (currentStage < 3) {
+            drawCentered(g2, kanitFont.deriveFont(Font.BOLD, 28f), new Color(255, 220, 80),
+                    "★  ปลดล็อคด่านที่ " + (currentStage + 1) + " แล้ว!", screenHeight / 2 + 45);
+        } else {
+            drawCentered(g2, kanitFont.deriveFont(Font.BOLD, 28f), new Color(255, 80, 255),
+                    "★  คุณเอาชนะทุกด่านแล้ว! ยอดเยี่ยมมาก!", screenHeight / 2 + 45);
+        }
+
+        String dots = ".".repeat((resultTimer / 20) % 4);
+        drawCentered(g2, kanitFont.deriveFont(Font.PLAIN, 28f), Color.WHITE,
+                "กำลังกลับไปหน้าเลือกด่าน" + dots, screenHeight / 2 + 110);
+    }
+
+    private void drawMenus(Graphics2D g2) {
+        switch (menuState) {
+            case 0 -> { // Title screen
+                BufferedImage frame = (currentTitleFrame == 1) ? titleFrame1 : titleFrame2;
+                if (frame != null) g2.drawImage(frame, 0, 0, screenWidth, screenHeight, null);
+            }
+            case 1 -> drawSelectStageScreen(g2);
+            case 4 -> drawUpgradeScreen(g2);
+        }
+    }
+
+    /** วาดหน้าเลือกด่านพร้อมระบบล็อค/ปลดล็อค */
+    private void drawSelectStageScreen(Graphics2D g2) {
+        g2.setColor(Color.BLACK);
+        g2.fillRect(0, 0, screenWidth, screenHeight);
+
+        drawCentered(g2, kanitFont.deriveFont(Font.BOLD, 42f), Color.WHITE, "เลือกด่าน", 80);
+
+        // ── card ทั้ง 3 ด่าน ────────────────────────────────────────────
+        int cardW  = 220, cardH = 170;
+        int startX = (screenWidth - (cardW * 3 + 40 * 2)) / 2;
+        int cardY  = 130;
+
+        String[] stageNames  = { "ด่าน 1", "ด่าน 2", "ด่าน 3" };
+        String[] bossNames   = { "Scythe Boss", "Stage 2 Boss", "Stage 3 Boss" };
+        String[] diffLabels  = { "ปกติ", "ยากขึ้น ×1.5", "ยากขึ้น ×2.0" };
+        Color[]  cardColors  = {
+            new Color(30, 80, 160),
+            new Color(130, 40, 140),
+            new Color(160, 50, 20)
+        };
+        int[] winPoints = { 60, 90, 120 };
+
+        for (int i = 0; i < 3; i++) {
+            int stageNum = i + 1;
+            int cx       = startX + i * (cardW + 40);
+            boolean unlocked = stageNum <= highestUnlockedStage;
+            boolean selected = stageNum == currentStage;
+
+            // พื้นหลัง card
+            Color bgColor = unlocked ? cardColors[i] : new Color(50, 50, 50);
+            if (!selected) bgColor = bgColor.darker();
+            g2.setColor(bgColor);
+            g2.fillRoundRect(cx, cardY, cardW, cardH, 20, 20);
+
+            if (selected) {
+                g2.setColor(Color.WHITE);
+                g2.setStroke(new BasicStroke(4));
+                g2.drawRoundRect(cx, cardY, cardW, cardH, 20, 20);
+                g2.setStroke(new BasicStroke(1));
+            }
+
+            // เนื้อหาใน card
+            if (!unlocked) {
+                // ล็อคอยู่
+                g2.setFont(kanitFont.deriveFont(Font.BOLD, 28f));
+                g2.setColor(new Color(120, 120, 120));
+                drawCenteredInRect(g2, "LOCKED", cx, cardY + 15, cardW, 40);
+                g2.setFont(kanitFont.deriveFont(Font.BOLD, 20f));
+                drawCenteredInRect(g2, stageNames[i], cx, cardY + 60, cardW, 28);
+                g2.setFont(kanitFont.deriveFont(Font.PLAIN, 16f));
+                drawCenteredInRect(g2, "ชนะด่าน " + i + " ก่อน", cx, cardY + 94, cardW, 24);
+            } else {
+                // ปลดล็อคแล้ว
+                g2.setFont(kanitFont.deriveFont(Font.BOLD, 26f));
+                g2.setColor(Color.WHITE);
+                drawCenteredInRect(g2, stageNames[i], cx, cardY + 10, cardW, 36);
+
+                g2.setFont(kanitFont.deriveFont(Font.PLAIN, 18f));
+                g2.setColor(new Color(200, 200, 255));
+                drawCenteredInRect(g2, bossNames[i], cx, cardY + 52, cardW, 26);
+
+                g2.setFont(kanitFont.deriveFont(Font.PLAIN, 16f));
+                g2.setColor(new Color(255, 200, 80));
+                drawCenteredInRect(g2, diffLabels[i], cx, cardY + 82, cardW, 24);
+
+                g2.setColor(new Color(100, 255, 150));
+                drawCenteredInRect(g2, "ชนะ = +" + winPoints[i] + " pts", cx, cardY + 110, cardW, 22);
+
+                g2.setColor(new Color(180, 255, 180));
+                drawCenteredInRect(g2, "พ่าย = +" + (i * 3) + " pts/sec×½", cx, cardY + 136, cardW, 20);
+            }
+        }
+
+        // ── ข้อความด้านล่าง ────────────────────────────────────────────
+        int msgY = cardY + cardH + 30;
+
+        if (currentStage <= highestUnlockedStage) {
+            drawCentered(g2, kanitFont.deriveFont(Font.BOLD, 26f), new Color(100, 255, 150),
+                    "[ ENTER ] เริ่มด่านที่ " + currentStage, msgY);
+        } else {
+            drawCentered(g2, kanitFont.deriveFont(Font.BOLD, 26f), new Color(255, 100, 100),
+                    "ด่านนี้ยังล็อคอยู่ — ชนะด่านก่อนหน้าก่อน", msgY);
+        }
+
+        drawCentered(g2, kanitFont.deriveFont(Font.PLAIN, 22f), Color.GRAY,
+                "◀ ▶  เลื่อนเลือกด่าน", msgY + 40);
+        drawCentered(g2, kanitFont.deriveFont(Font.BOLD, 22f), Color.YELLOW,
+                "[C] อัปเกรดตัวละคร  |  แต้มที่มี: " + playerPoints + " pts", msgY + 80);
+        drawCentered(g2, kanitFont.deriveFont(Font.PLAIN, 20f), new Color(180, 180, 255),
+                "HP Lv." + playerHpLv + " (HP " + (20 + (playerHpLv - 1) * 5) + ")   " +
+                "ATK Lv." + playerAtkLv + " (DMG " + (20 + (playerAtkLv - 1) * 5) + ")",
+                msgY + 118);
+    }
+
+    /** helper: วาดข้อความ centered ในกรอบ */
+    private void drawCenteredInRect(Graphics2D g2, String text, int rx, int ry, int rw, int rh) {
+        FontMetrics fm = g2.getFontMetrics();
+        int tx = rx + (rw - fm.stringWidth(text)) / 2;
+        int ty = ry + (rh + fm.getAscent() - fm.getDescent()) / 2;
+        g2.drawString(text, tx, ty);
+    }
+
+    private void drawUpgradeScreen(Graphics2D g2) {
+        g2.setColor(new Color(20, 20, 30));
+        g2.fillRect(0, 0, screenWidth, screenHeight);
+
+        drawCentered(g2, kanitFont.deriveFont(Font.BOLD, 48f), Color.WHITE, "อัปเกรดตัวละคร", 100);
+        drawCentered(g2, kanitFont.deriveFont(Font.PLAIN, 32f), Color.YELLOW,
+                "แต้มที่มี: " + playerPoints + " Points", 160);
+        drawCentered(g2, kanitFont.deriveFont(Font.PLAIN, 20f), new Color(160, 160, 255),
+                "ต้องการ " + upgradeCost + " แต้มต่อ 1 เลเวล  |  สูงสุด " + maxStatLv + " เลเวล", 200);
+
+        g2.setFont(kanitFont.deriveFont(Font.BOLD, 28f));
+        drawUpgradeOption(g2, 0, "HP",  playerHpLv,  20 + (playerHpLv - 1)  * 5, "พลังชีวิตตอนเริ่มสู้", 260);
+        drawUpgradeOption(g2, 1, "ATK", playerAtkLv, 20 + (playerAtkLv - 1) * 5, "พลังโจมตี",           360);
+
+        drawCentered(g2, kanitFont.deriveFont(Font.PLAIN, 24f), new Color(180, 180, 255),
+                "[ W / S เลื่อน ]     [ ENTER อัปเกรด ]     [ C กลับ ]",
+                screenHeight - 80);
+    }
+
+    private void drawUpgradeOption(Graphics2D g2, int idx, String stat, int lv, int value, String valueLabel, int y) {
+        boolean maxed  = (lv >= maxStatLv);
+        String  maxTag = maxed ? " [MAX!]" : "  (ใช้ " + upgradeCost + " แต้ม)";
+        String  text   = "อัปเกรด " + stat + " (Lv " + lv + "/" + maxStatLv + ")  |  "
+                       + valueLabel + ": " + value + maxTag;
+
+        if (upgradeSelection == idx) {
+            Color bg = (idx == 0) ? new Color(80, 80, 150) : new Color(150, 80, 80);
+            g2.setColor(bg);
+            g2.fillRoundRect(80, y, screenWidth - 160, 70, 20, 20);
+            g2.setColor(maxed ? Color.GRAY : Color.WHITE);
+        } else {
+            g2.setColor(Color.GRAY);
+        }
+        g2.drawString(text, 120, y + 46);
+    }
+
+    private void drawBattle(Graphics2D g2) {
+        // วาดบอสตามด่าน
+        switch (currentStage) {
+            case 1 -> scytheBoss.draw(g2);
+            case 2 -> skullBoss.draw(g2);
+            case 3 -> kekeBoss.draw(g2);
+        }
+
+        // กรอบ battle box (สีต่างตามด่าน)
+        g2.setColor(switch (currentStage) {
+            case 2  -> new Color(200, 100, 255);
+            case 3  -> new Color(255, 120, 30);
+            default -> Color.WHITE;
+        });
+        g2.setStroke(new BasicStroke(5));
+        g2.drawRect(boxX, boxY, boxWidth, boxHeight);
+        g2.setStroke(new BasicStroke(1));
+
+        obstacle.draw(g2);
+        drawStatusText(g2);
+        drawHpBars(g2);
+        player.draw(g2);
+        battleGUI.draw(g2);
+    }
+
+    private void drawStatusText(Graphics2D g2) {
+        String bossName = switch (currentStage) {
+            case 2  -> "Stage 2 Boss";
+            case 3  -> "Stage 3 Boss";
+            default -> "Scythe Boss";
+        };
+
+        if (battlePhase == playerTurnPhase) {
+            g2.setFont(kanitFont.deriveFont(Font.PLAIN, 20f));
+            g2.setColor(Color.WHITE);
+            g2.drawString("* " + bossName + " จ้องมองคุณอยู่...", boxX + 40, boxY + 55);
+
+            if (feedbackTimer > 0) {
+                boolean good = feedbackText.contains("ดาเมจ");
+                g2.setColor(good ? new Color(100, 255, 100) : new Color(255, 100, 100));
+                g2.setFont(kanitFont.deriveFont(Font.BOLD, 20f));
+                g2.drawString(feedbackText, boxX + 40, boxY + 90);
+            } else if (playerTurnState == PT_IDLE && !pendingBossPhase) {
+                g2.setColor(new Color(255, 230, 100));
+                g2.setFont(kanitFont.deriveFont(Font.BOLD, 20f));
+                g2.drawString("[ ENTER ] ตอบคำถามเพื่อโจมตี!", boxX + 40, boxY + 90);
+            }
+        } else {
+            g2.setColor(Color.RED);
+            g2.setFont(kanitFont.deriveFont(Font.BOLD, 20f));
+            int done  = Math.min(patternIndex, patternQueue.size());
+            int total = patternQueue.size();
+
+            if (initialCooldownActive) {
+                int secs = (INITIAL_COOLDOWN - initialCooldownTimer) / 60 + 1;
+                g2.drawString("! " + bossName + " กำลังเตรียมโจมตี... (" + secs + " วินาที)",
+                        boxX + 20, boxY + 55);
+            } else {
+                String coolStr = inCooldown ? "  (เตรียมรับมือ...)" : "";
+                g2.drawString("! " + bossName + " กำลังโจมตี — หลบหลีก!  ["
+                        + done + " / " + total + "]" + coolStr, boxX + 20, boxY + 55);
+            }
+        }
+    }
+
+    private void drawHpBars(Graphics2D g2) {
+        // ── Player HP bar ─────────────────────────────────────────────
+        int sy = boxY + boxHeight + 40;
+        g2.setFont(kanitFont.deriveFont(Font.PLAIN, 24f));
+        g2.setColor(Color.WHITE);
+        g2.drawString("YOU", boxX, sy);
+        g2.setColor(Color.RED);
+        g2.fillRect(boxX + 180, sy - 20, playerMaxHp * 5, 30);
+        g2.setColor(Color.YELLOW);
+        g2.fillRect(boxX + 180, sy - 20, playerCurrentHp * 5, 30);
+        g2.setColor(Color.WHITE);
+        g2.drawString(playerCurrentHp + " / " + playerMaxHp, boxX + 180 + playerMaxHp * 5 + 20, sy);
+
+        // ── Boss HP bar ───────────────────────────────────────────────
+        int by       = boxY - 30;
+        int bossMax  = getCurrentBossMaxHp();
+        int bossHp   = getCurrentBossHp();
+        int barWidth = Math.min(bossMax * 3, 500); // จำกัดความกว้าง bar
+        int barFill  = (bossMax > 0) ? (int)((float) bossHp / bossMax * barWidth) : 0;
+
+        g2.setColor(Color.WHITE);
+        g2.drawString("BOSS HP", boxX, by);
+        g2.setColor(Color.RED);
+        g2.fillRect(boxX + 180, by - 20, barWidth, 30);
+        g2.setColor(Color.YELLOW);
+        g2.fillRect(boxX + 180, by - 20, Math.max(0, barFill), 30);
+        g2.setColor(Color.WHITE);
+        g2.drawString(bossHp + " / " + bossMax, boxX + 180 + barWidth + 20, by);
+
+        // แสดงเลขด่าน มุมบนซ้าย
+        g2.setFont(kanitFont.deriveFont(Font.BOLD, 22f));
+        g2.setColor(switch (currentStage) {
+            case 2  -> new Color(200, 100, 255);
+            case 3  -> new Color(255, 120, 30);
+            default -> new Color(100, 200, 255);
+        });
+        g2.drawString("[ ด่านที่ " + currentStage + " ]", 20, 30);
+    }
+
+    private void drawCentered(Graphics2D g2, Font font, Color color, String text, int y) {
+        g2.setFont(font);
+        g2.setColor(color);
+        g2.drawString(text, (screenWidth - g2.getFontMetrics().stringWidth(text)) / 2, y);
+    }
+}
