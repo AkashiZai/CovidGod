@@ -60,7 +60,7 @@ public class GamePanel extends JPanel implements Runnable {
     // ── Stats & progression ───────────────────────────────────────────
     int playerMaxHp     = 20;
     int playerCurrentHp = 20;
-    public int playerPoints  = 0;
+    public int playerPoints  = 10000;
     public int playerAtkLv   = 1;
     public int playerHpLv    = 1;
     public final int maxStatLv   = 20;  // อัพได้สูงสุด 20 เลเวล
@@ -712,7 +712,7 @@ public class GamePanel extends JPanel implements Runnable {
         }
 
         drawCentered(g2, kanitFont.deriveFont(Font.PLAIN, 22f), Color.GRAY,
-                "◀ ▶  เลื่อนเลือกด่าน", msgY + 40);
+                "A / D  เลื่อนเลือกด่าน", msgY + 40);
         drawCentered(g2, kanitFont.deriveFont(Font.BOLD, 22f), Color.YELLOW,
                 "[C] อัปเกรดตัวละคร  |  แต้มที่มี: " + playerPoints + " pts", msgY + 80);
         drawCentered(g2, kanitFont.deriveFont(Font.PLAIN, 20f), new Color(180, 180, 255),
