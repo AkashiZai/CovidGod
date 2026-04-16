@@ -7,6 +7,7 @@ import java.util.*;
 import java.util.List;
 import javax.imageio.ImageIO;
 import javax.swing.JPanel;
+
 import main.entity.Player;
 import main.entity.ScytheBoss;
 import main.entity.SkullBoss;
@@ -23,17 +24,18 @@ public class GamePanel extends JPanel implements Runnable {
 
     // ── Game objects ──────────────────────────────────────────────────
     public final Key keyH = new Key();
-    public Player     player;
-    public ScytheBoss scytheBoss;   // บอสด่าน 1
+    public Player player;
+    public ScytheBoss scytheBoss; // บอสด่าน 1
     public SkullBoss skullBoss;   // บอสด่าน 2
-    public KekeBoss kekeBoss;   // บอสด่าน 3
-    public Obstacle   obstacle;
+    public KekeBoss kekeBoss;     // บอสด่าน 3
+    public Obstacle obstacle;
     private BattleGUI battleGUI;
-    private Thread    gameThread;
+    private Thread gameThread;
 
     // ── Menu / screen states ──────────────────────────────────────────
     public static boolean playState = false;
     public int menuState = 0;
+
     public final int titleScreen      = 0;
     public final int selectBossScreen = 1;
     public final int gameOverScreen   = 2;
@@ -52,12 +54,12 @@ public class GamePanel extends JPanel implements Runnable {
     // ── Stats & progression ───────────────────────────────────────────
     int playerMaxHp     = 20;
     int playerCurrentHp = 20;
-    public int playerPoints  = 10000;
-    public int playerAtkLv   = 1;
-    public int playerHpLv    = 1;
-    public final int maxStatLv   = 20;  // อัพได้สูงสุด 20 เลเวล
+    public int playerPoints = 10000;
+    public int playerAtkLv  = 1;
+    public int playerHpLv   = 1;
+    public final int maxStatLv   = 20; // อัพได้สูงสุด 20 เลเวล
     public final int upgradeCost = 30;
-    private int upgradeSelection = 0;   // 0 = HP, 1 = ATK
+    private int upgradeSelection = 0;  // 0 = HP, 1 = ATK
 
     // ── Turn phases ───────────────────────────────────────────────────
     public int battlePhase = 0;
@@ -76,13 +78,15 @@ public class GamePanel extends JPanel implements Runnable {
     private static final int FEEDBACK_FRAMES = 70;
 
     // ── Pattern queue (boss attack patterns) ─────────────────────────
-    private final Random        rng          = new Random();
+    private final Random rng = new Random();
     private final List<Integer> patternQueue = new ArrayList<>();
-    private int  patternIndex         = 0;
-    private int  cooldownTimer        = 0;
-    private boolean inCooldown        = false;
+
+    private int     patternIndex          = 0;
+    private int     cooldownTimer         = 0;
+    private boolean inCooldown            = false;
     private boolean initialCooldownActive = false;
-    private int  initialCooldownTimer = 0;
+    private int     initialCooldownTimer  = 0;
+
     private static final int PATTERN_COOLDOWN = 60;
     private static final int INITIAL_COOLDOWN = 180; // 3 seconds
 
@@ -96,19 +100,19 @@ public class GamePanel extends JPanel implements Runnable {
     private int titleAnimCounter  = 0;
     private int currentTitleFrame = 1;
     private BufferedImage titleFrame1, titleFrame2;
-    private BufferedImage bgStage1, bgStage2, bgStage3; // ตัวแปรเก็บภาพพื้นหลังแต่ละด่าน
+    private BufferedImage bgStage1, bgStage2, bgStage3;
 
     public Font kanitFont;
 
     // ── Constructor ───────────────────────────────────────────────────
-
     public GamePanel() {
         player     = new Player(this, keyH);
         scytheBoss = new ScytheBoss(this);
-        skullBoss = new SkullBoss(this);
-        kekeBoss = new KekeBoss(this);
+        skullBoss  = new SkullBoss(this);
+        kekeBoss   = new KekeBoss(this);
         obstacle   = new Obstacle(this);
         battleGUI  = new BattleGUI(screenWidth, screenHeight);
+
         battleGUI.loadQuestions("/main/res/questions.txt");
 
         boxX = (screenWidth - boxWidth) / 2;
@@ -139,7 +143,6 @@ public class GamePanel extends JPanel implements Runnable {
         titleFrame1 = loadTitleImage("/main/title/title1.png");
         titleFrame2 = loadTitleImage("/main/title/title2.png");
 
-        // โหลดรูปพื้นหลังแต่ละด่าน (หากโฟลเดอร์ชื่อต่างไปจากนี้ สามารถแก้ตรง Path ในเครื่องหมายคำพูดได้เลย)
         bgStage1 = loadBgImage("/main/bg/1.png");
         bgStage2 = loadBgImage("/main/bg/2.png");
         bgStage3 = loadBgImage("/main/bg/3.png");
@@ -156,7 +159,6 @@ public class GamePanel extends JPanel implements Runnable {
         }
     }
 
-    // เมธอดสำหรับโหลดพื้นหลังโดยเฉพาะ ถ้าไม่มีจะปล่อยผ่านเป็น null ทำให้จอสีดำปกติ
     private BufferedImage loadBgImage(String resourcePath) {
         try (InputStream is = getClass().getResourceAsStream(resourcePath)) {
             if (is == null) return null;
@@ -172,12 +174,14 @@ public class GamePanel extends JPanel implements Runnable {
         Graphics2D g = placeholder.createGraphics();
         g.setColor(Color.BLACK);
         g.fillRect(0, 0, screenWidth, screenHeight);
+
         g.setColor(Color.WHITE);
         g.setFont(new Font("Arial", Font.BOLD, 48));
         g.drawString("COVIDTALE", 80, 120);
         g.setFont(new Font("Arial", Font.PLAIN, 24));
         g.drawString("Missing title assets", 80, 170);
         g.dispose();
+
         return placeholder;
     }
 
@@ -206,11 +210,11 @@ public class GamePanel extends JPanel implements Runnable {
     }
 
     // ── UPDATE ────────────────────────────────────────────────────────
-
     public void update() {
         if (menuState == gameOverScreen || menuState == youWinScreen) {
-            if (++resultTimer >= RESULT_DISPLAY_FRAMES)
+            if (++resultTimer >= RESULT_DISPLAY_FRAMES) {
                 resetToSelectBoss();
+            }
             return;
         }
 
@@ -218,10 +222,11 @@ public class GamePanel extends JPanel implements Runnable {
             updateMenus();
         } else {
             battleFrames++;
-            if (battlePhase == playerTurnPhase)
+            if (battlePhase == playerTurnPhase) {
                 updatePlayerTurn();
-            else
+            } else {
                 updateBossAttack();
+            }
 
             updateCurrentBoss();
 
@@ -297,13 +302,12 @@ public class GamePanel extends JPanel implements Runnable {
     private void damageCurrentBoss(int damage) {
         switch (currentStage) {
             case 1 -> scytheBoss.hp = Math.max(0, scytheBoss.hp - damage);
-            case 2 -> skullBoss.hp = Math.max(0, skullBoss.hp - damage);
-            case 3 -> kekeBoss.hp = Math.max(0, kekeBoss.hp - damage);
+            case 2 -> skullBoss.hp  = Math.max(0, skullBoss.hp - damage);
+            case 3 -> kekeBoss.hp   = Math.max(0, kekeBoss.hp - damage);
         }
     }
 
     // ── Menu navigation ───────────────────────────────────────────────
-
     private void updateMenus() {
         switch (menuState) {
             case 0 -> updateTitleScreen();
@@ -315,7 +319,8 @@ public class GamePanel extends JPanel implements Runnable {
     private void updateTitleScreen() {
         if (keyH.anyKeyPressed) {
             menuState          = selectBossScreen;
-            keyH.anyKeyPressed = keyH.enterPressed = false;
+            keyH.anyKeyPressed = false;
+            keyH.enterPressed  = false;
         }
         if (++titleAnimCounter > 30) {
             currentTitleFrame = (currentTitleFrame == 1) ? 2 : 1;
@@ -334,13 +339,14 @@ public class GamePanel extends JPanel implements Runnable {
         }
 
         if (keyH.enterPressed) {
-            if (currentStage <= highestUnlockedStage)
+            if (currentStage <= highestUnlockedStage) {
                 startBattle();
+            }
             keyH.enterPressed = false;
         }
 
         if (keyH.cPressed) {
-            menuState    = upgradeScreen;
+            menuState     = upgradeScreen;
             keyH.cPressed = false;
         }
     }
@@ -348,8 +354,8 @@ public class GamePanel extends JPanel implements Runnable {
     private void startBattle() {
         switch (currentStage) {
             case 1 -> scytheBoss = new ScytheBoss(this);
-            case 2 -> skullBoss = new SkullBoss(this);
-            case 3 -> kekeBoss = new KekeBoss(this);
+            case 2 -> skullBoss  = new SkullBoss(this);
+            case 3 -> kekeBoss   = new KekeBoss(this);
         }
 
         playState       = true;
@@ -358,7 +364,7 @@ public class GamePanel extends JPanel implements Runnable {
         playerMaxHp     = 20 + (playerHpLv - 1) * 5;
         playerCurrentHp = playerMaxHp;
         battleFrames    = 0;
-        player.x        = boxX + boxWidth  / 2 - 32;
+        player.x        = boxX + boxWidth / 2 - 32;
         player.y        = boxY + boxHeight / 2 - 32;
     }
 
@@ -386,13 +392,12 @@ public class GamePanel extends JPanel implements Runnable {
             keyH.enterPressed = false;
         }
         if (keyH.cPressed) {
-            menuState    = selectBossScreen;
+            menuState     = selectBossScreen;
             keyH.cPressed = false;
         }
     }
 
     // ── Player turn ───────────────────────────────────────────────────
-
     private void updatePlayerTurn() {
         if (feedbackTimer > 0) feedbackTimer--;
         battleGUI.update();
@@ -415,13 +420,16 @@ public class GamePanel extends JPanel implements Runnable {
                 if (keyH.upPressed)    { battleGUI.handleUp();         keyH.upPressed    = false; }
                 if (keyH.downPressed)  { battleGUI.handleDown();       keyH.downPressed  = false; }
                 if (keyH.enterPressed) { battleGUI.confirmSelection(); keyH.enterPressed = false; }
+
                 if (!battleGUI.isVisible() && battleGUI.isAnswered()) {
                     playerTurnState = PT_ANSWERED;
                     processAnswer(battleGUI.getResult());
                 }
             }
             case PT_ANSWERED -> {
-                if (feedbackTimer <= 0) playerTurnState = PT_IDLE;
+                if (feedbackTimer <= 0) {
+                    playerTurnState = PT_IDLE;
+                }
             }
         }
     }
@@ -440,10 +448,10 @@ public class GamePanel extends JPanel implements Runnable {
     }
 
     // ── Boss attack turn ──────────────────────────────────────────────
-
     private void updateBossAttack() {
-        if (getCurrentBossState() == ScytheBoss.STATE_IDLE)
+        if (getCurrentBossState() == ScytheBoss.STATE_IDLE) {
             triggerCurrentBossAttack();
+        }
 
         if (initialCooldownActive) {
             if (++initialCooldownTimer >= INITIAL_COOLDOWN) {
@@ -471,18 +479,19 @@ public class GamePanel extends JPanel implements Runnable {
         obstacle.update();
         player.update();
 
-        if (obstacle.checkHit(player.x, player.y, 64))
+        if (obstacle.checkHit(player.x, player.y, 64)) {
             playerCurrentHp = Math.max(0, playerCurrentHp - 1);
+        }
 
         if (playerCurrentHp <= 0) {
             playState   = false;
             menuState   = gameOverScreen;
             resultTimer = 0;
 
-            int basePoints    = battleFrames / 120;
-            int stageBonus    = (currentStage - 1) * 3;
-            lastGainedPoints  = basePoints + stageBonus;
-            playerPoints     += lastGainedPoints;
+            int basePoints   = battleFrames / 120;
+            int stageBonus   = (currentStage - 1) * 3;
+            lastGainedPoints = basePoints + stageBonus;
+            playerPoints    += lastGainedPoints;
 
             obstacle.stop();
         }
@@ -505,16 +514,20 @@ public class GamePanel extends JPanel implements Runnable {
 
         List<Integer> pool = new ArrayList<>(List.of(0, 1, 2, 3));
         Collections.shuffle(pool, rng);
+
         int minPatterns = currentStage;
         int maxExtra    = Math.max(0, 3 - currentStage);
         int count       = Math.min(minPatterns + rng.nextInt(maxExtra + 1), pool.size());
-        for (int i = 0; i < count; i++)
+
+        for (int i = 0; i < count; i++) {
             patternQueue.add(pool.get(i));
+        }
     }
 
     private void startNextInQueue() {
-        if (patternIndex < patternQueue.size())
+        if (patternIndex < patternQueue.size()) {
             obstacle.startPattern(patternQueue.get(patternIndex++));
+        }
     }
 
     private void resetToSelectBoss() {
@@ -524,33 +537,42 @@ public class GamePanel extends JPanel implements Runnable {
         resultTimer = 0;
         obstacle.stop();
         patternQueue.clear();
-        patternIndex = cooldownTimer = initialCooldownTimer = 0;
-        inCooldown   = initialCooldownActive = pendingBossPhase = false;
-        feedbackText  = "";
-        feedbackTimer = 0;
-        playerTurnState = PT_IDLE;
+
+        patternIndex         = 0;
+        cooldownTimer        = 0;
+        initialCooldownTimer = 0;
+        inCooldown           = false;
+        initialCooldownActive = false;
+        pendingBossPhase     = false;
+        feedbackText         = "";
+        feedbackTimer        = 0;
+        playerTurnState      = PT_IDLE;
 
         scytheBoss = new ScytheBoss(this);
-        skullBoss = new SkullBoss(this);
-        kekeBoss = new KekeBoss(this);
+        skullBoss  = new SkullBoss(this);
+        kekeBoss   = new KekeBoss(this);
 
         obstacle.setDifficultyMultiplier(1.0f);
-        player.x = boxX + boxWidth  / 2 - 32;
+        player.x = boxX + boxWidth / 2 - 32;
         player.y = boxY + boxHeight / 2 - 32;
     }
 
     // ── PAINT ─────────────────────────────────────────────────────────
-
     @Override
     public void paintComponent(Graphics g) {
         super.paintComponent(g);
         Graphics2D g2 = (Graphics2D) g;
         g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 
-        if      (menuState == gameOverScreen) drawGameOver(g2);
-        else if (menuState == youWinScreen)   drawYouWin(g2);
-        else if (!playState)                  drawMenus(g2);
-        else                                  drawBattle(g2);
+        if (menuState == gameOverScreen) {
+            drawGameOver(g2);
+        } else if (menuState == youWinScreen) {
+            drawYouWin(g2);
+        } else if (!playState) {
+            drawMenus(g2);
+        } else {
+            drawBattle(g2);
+        }
 
         g2.dispose();
     }
@@ -612,10 +634,10 @@ public class GamePanel extends JPanel implements Runnable {
         int startX = (screenWidth - (cardW * 3 + 40 * 2)) / 2;
         int cardY  = 130;
 
-        String[] stageNames  = { "ด่าน 1", "ด่าน 2", "ด่าน 3" };
-        String[] bossNames   = { "Scythe Boss", "Stage 2 Boss", "Stage 3 Boss" };
-        String[] diffLabels  = { "ปกติ", "ยากขึ้น ×1.5", "ยากขึ้น ×2.0" };
-        Color[]  cardColors  = {
+        String[] stageNames = { "ด่าน 1", "ด่าน 2", "ด่าน 3" };
+        String[] bossNames  = { "Scythe Boss", "Stage 2 Boss", "Stage 3 Boss" };
+        String[] diffLabels = { "ปกติ", "ยากขึ้น ×1.5", "ยากขึ้น ×2.0" };
+        Color[] cardColors  = {
                 new Color(30, 80, 160),
                 new Color(130, 40, 140),
                 new Color(160, 50, 20)
@@ -630,6 +652,7 @@ public class GamePanel extends JPanel implements Runnable {
 
             Color bgColor = unlocked ? cardColors[i] : new Color(50, 50, 50);
             if (!selected) bgColor = bgColor.darker();
+
             g2.setColor(bgColor);
             g2.fillRoundRect(cx, cardY, cardW, cardH, 20, 20);
 
@@ -644,8 +667,10 @@ public class GamePanel extends JPanel implements Runnable {
                 g2.setFont(kanitFont.deriveFont(Font.BOLD, 28f));
                 g2.setColor(new Color(120, 120, 120));
                 drawCenteredInRect(g2, "LOCKED", cx, cardY + 15, cardW, 40);
+
                 g2.setFont(kanitFont.deriveFont(Font.BOLD, 20f));
                 drawCenteredInRect(g2, stageNames[i], cx, cardY + 60, cardW, 28);
+
                 g2.setFont(kanitFont.deriveFont(Font.PLAIN, 16f));
                 drawCenteredInRect(g2, "ชนะด่าน " + i + " ก่อน", cx, cardY + 94, cardW, 24);
             } else {
@@ -707,8 +732,8 @@ public class GamePanel extends JPanel implements Runnable {
                 "ต้องการ " + upgradeCost + " แต้มต่อ 1 เลเวล  |  สูงสุด " + maxStatLv + " เลเวล", 200);
 
         g2.setFont(kanitFont.deriveFont(Font.BOLD, 28f));
-        drawUpgradeOption(g2, 0, "HP",  playerHpLv,  20 + (playerHpLv - 1)  * 5, "พลังชีวิตตอนเริ่มสู้", 260);
-        drawUpgradeOption(g2, 1, "ATK", playerAtkLv, 20 + (playerAtkLv - 1) * 5, "พลังโจมตี",           360);
+        drawUpgradeOption(g2, 0, "HP",  playerHpLv,  20 + (playerHpLv - 1) * 5,  "พลังชีวิตตอนเริ่มสู้", 260);
+        drawUpgradeOption(g2, 1, "ATK", playerAtkLv, 20 + (playerAtkLv - 1) * 5, "พลังโจมตี", 360);
 
         drawCentered(g2, kanitFont.deriveFont(Font.PLAIN, 24f), new Color(180, 180, 255),
                 "[ W / S เลื่อน ]     [ ENTER อัปเกรด ]     [ C กลับ ]",
@@ -733,7 +758,6 @@ public class GamePanel extends JPanel implements Runnable {
     }
 
     private void drawBattle(Graphics2D g2) {
-        // 1. วาดพื้นหลัง (Background) ตามด่าน
         BufferedImage currentBg = switch (currentStage) {
             case 1 -> bgStage1;
             case 2 -> bgStage2;
@@ -742,22 +766,18 @@ public class GamePanel extends JPanel implements Runnable {
         };
 
         if (currentBg != null) {
-            // ถ้ารูปเล็กหรือใหญ่ไป มันจะยืดให้เต็มจออัตโนมัติ
             g2.drawImage(currentBg, 0, 0, screenWidth, screenHeight, null);
         } else {
             g2.setColor(Color.BLACK);
             g2.fillRect(0, 0, screenWidth, screenHeight);
         }
 
-        // 2. วาดบอสตามด่าน
         switch (currentStage) {
             case 1 -> scytheBoss.draw(g2);
             case 2 -> skullBoss.draw(g2);
             case 3 -> kekeBoss.draw(g2);
         }
 
-        // 3. กรอบ battle box
-        // ใส่พื้นสีดำแบบโปร่งแสงให้มองเห็นลวดลายพื้นหลังจางๆ หรือสีดำทึบ (ตอนนี้ผมใส่สีดำทึบให้เห็นหัวใจชัดๆ)
         g2.setColor(Color.BLACK);
         g2.fillRect(boxX, boxY, boxWidth, boxHeight);
 
@@ -835,7 +855,7 @@ public class GamePanel extends JPanel implements Runnable {
         int bossMax  = getCurrentBossMaxHp();
         int bossHp   = getCurrentBossHp();
         int barWidth = Math.min(bossMax * 3, 500);
-        int barFill  = (bossMax > 0) ? (int)((float) bossHp / bossMax * barWidth) : 0;
+        int barFill  = (bossMax > 0) ? (int) ((float) bossHp / bossMax * barWidth) : 0;
 
         g2.setColor(Color.WHITE);
         g2.drawString("BOSS HP", boxX, by);
@@ -846,23 +866,17 @@ public class GamePanel extends JPanel implements Runnable {
         g2.setColor(Color.WHITE);
         g2.drawString(bossHp + " / " + bossMax, boxX + 180 + barWidth + 20, by);
 
-        // แสดงเลขด่าน มุมบนซ้าย
         g2.setFont(kanitFont.deriveFont(Font.BOLD, 22f));
-        g2.setColor(switch (currentStage) {
+        Color stageColor = switch (currentStage) {
             case 2  -> new Color(200, 100, 255);
             case 3  -> new Color(255, 120, 30);
             default -> new Color(100, 200, 255);
-        });
+        };
 
-        // เพิ่มเงาดำใต้ข้อความเลขด่าน เพื่อให้มองเห็นชัดเจนแม้อยู่บน Background ที่สว่าง
         g2.setColor(Color.BLACK);
         g2.drawString("[ ด่านที่ " + currentStage + " ]", 22, 32);
 
-        g2.setColor(switch (currentStage) {
-            case 2  -> new Color(200, 100, 255);
-            case 3  -> new Color(255, 120, 30);
-            default -> new Color(100, 200, 255);
-        });
+        g2.setColor(stageColor);
         g2.drawString("[ ด่านที่ " + currentStage + " ]", 20, 30);
     }
 
